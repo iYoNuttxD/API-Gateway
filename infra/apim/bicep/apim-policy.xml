@@ -1,0 +1,198 @@
+<!--
+  ============================================================================
+  Azure API Management - ClickDelivery Gateway Policies
+  ============================================================================
+  Políticas aplicadas a todas as operações da API do BFF
+  
+  Funcionalidades:
+  - CORS configurável para permitir origens específicas
+  - Rate limiting para proteção contra abuso
+  - Forward de headers importantes (Authorization, x-correlation-id)
+  - Geração automática de correlation ID se não existir
+  - Timeout configurável para requisições ao backend
+  - Headers customizados na resposta
+  - Tratamento de erros estruturado
+  ============================================================================
+-->
+<policies>
+  <inbound>
+    <base />
+    
+    <!-- ================================================================== -->
+    <!-- Correlation ID: Gera um novo se não existir na requisição         -->
+    <!-- ================================================================== -->
+    <set-variable name="correlationId" value="@(context.Request.Headers.GetValueOrDefault("x-correlation-id", Guid.NewGuid().ToString()))" />
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@((string)context.Variables["correlationId"])</value>
+    </set-header>
+    
+    <!-- ================================================================== -->
+    <!-- CORS: Configuração de Cross-Origin Resource Sharing                -->
+    <!-- Permite que o frontend acesse a API de diferentes domínios         -->
+    <!-- ================================================================== -->
+    <!-- Validação e set de headers CORS manualmente para suportar múltiplas origens -->
+    <set-variable name="allowedOrigins" value="{{allowedOrigins}}" />
+    <choose>
+      <when condition="@(context.Request.Headers.ContainsKey("Origin"))">
+        <set-variable name="requestOrigin" value="@(context.Request.Headers.GetValueOrDefault("Origin",""))" />
+        <choose>
+          <when condition="@(((string)context.Variables["allowedOrigins"]).Split(',').Select(o => o.Trim()).Contains((string)context.Variables["requestOrigin"]))">
+            <set-header name="Access-Control-Allow-Origin" exists-action="override">
+              <value>@((string)context.Variables["requestOrigin"])</value>
+            </set-header>
+            <set-header name="Access-Control-Allow-Methods" exists-action="override">
+              <value>GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS</value>
+            </set-header>
+            <set-header name="Access-Control-Allow-Headers" exists-action="override">
+              <value>*</value>
+            </set-header>
+            <set-header name="Access-Control-Expose-Headers" exists-action="override">
+              <value>x-correlation-id, x-bff-proxy</value>
+            </set-header>
+            <set-header name="Access-Control-Max-Age" exists-action="override">
+              <value>300</value>
+            </set-header>
+          </when>
+        </choose>
+      </when>
+    </choose>
+    
+    <!-- ================================================================== -->
+    <!-- Rate Limiting: Proteção contra abuso de API                        -->
+    <!-- Limita número de requisições por período                           -->
+    <!-- counter-key usa X-Forwarded-For se disponível, senão IP direto     -->
+    <!-- ================================================================== -->
+    <rate-limit 
+      calls="{{rateLimitCalls}}" 
+      renewal-period="{{rateLimitRenewalPeriod}}" 
+      retry-after-header-name="Retry-After" 
+      retry-after-variable-name="retryAfter"
+      remaining-calls-header-name="X-RateLimit-Remaining"
+      total-calls-header-name="X-RateLimit-Limit"
+      counter-key="@{
+        var forwardedFor = context.Request.Headers.GetValueOrDefault("X-Forwarded-For", "");
+        return string.IsNullOrEmpty(forwardedFor) ? context.Request.IpAddress : forwardedFor.Split(',')[0].Trim();
+      }" />
+    
+    <!-- ================================================================== -->
+    <!-- Forward Headers: Garante que headers importantes sejam passados    -->
+    <!-- ================================================================== -->
+    <!-- Authorization: necessário para autenticação no BFF -->
+    <set-header name="Authorization" exists-action="skip">
+      <value>@(context.Request.Headers.GetValueOrDefault("Authorization", ""))</value>
+    </set-header>
+    
+    <!-- x-forwarded-host: informa ao backend qual era o host original -->
+    <set-header name="x-forwarded-host" exists-action="override">
+      <value>@(context.Request.OriginalUrl.Host)</value>
+    </set-header>
+    
+    <!-- x-forwarded-proto: informa o protocolo original (https) -->
+    <set-header name="x-forwarded-proto" exists-action="override">
+      <value>@(context.Request.OriginalUrl.Scheme)</value>
+    </set-header>
+    
+    <!-- x-real-ip: IP do cliente -->
+    <set-header name="x-real-ip" exists-action="override">
+      <value>@(context.Request.IpAddress)</value>
+    </set-header>
+    
+    <!-- ================================================================== -->
+    <!-- Backend Configuration: Define o backend e timeout                  -->
+    <!-- ================================================================== -->
+    <set-backend-service base-url="{{bffBackendUrl}}" />
+    
+    <!-- Timeout configurável para requisições ao backend -->
+    <timeout timeout="{{serviceTimeoutMs}}" />
+    
+  </inbound>
+  
+  <backend>
+    <!-- ================================================================== -->
+    <!-- Backend: Pass-through padrão para o BFF                            -->
+    <!-- ================================================================== -->
+    <base />
+  </backend>
+  
+  <outbound>
+    <!-- ================================================================== -->
+    <!-- Outbound: Headers adicionados na resposta                          -->
+    <!-- ================================================================== -->
+    <base />
+    
+    <!-- Indica que a requisição passou pelo gateway -->
+    <set-header name="x-bff-proxy" exists-action="override">
+      <value>true</value>
+    </set-header>
+    
+    <!-- Mantém correlation ID na resposta -->
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@((string)context.Variables["correlationId"])</value>
+    </set-header>
+    
+    <!-- Remove headers sensíveis do backend se existirem -->
+    <set-header name="X-AspNet-Version" exists-action="delete" />
+    <set-header name="X-Powered-By" exists-action="delete" />
+    <set-header name="Server" exists-action="delete" />
+    
+  </outbound>
+  
+  <on-error>
+    <!-- ================================================================== -->
+    <!-- Error Handling: Retorna erro estruturado em JSON                   -->
+    <!-- ================================================================== -->
+    <base />
+    
+    <!-- Define content-type como JSON -->
+    <set-header name="Content-Type" exists-action="override">
+      <value>application/json</value>
+    </set-header>
+    
+    <!-- Mantém correlation ID para rastreamento de erros -->
+    <set-header name="x-correlation-id" exists-action="override">
+      <value>@{
+        var correlationId = context.Variables.GetValueOrDefault<string>("correlationId", "");
+        return string.IsNullOrEmpty(correlationId) ? Guid.NewGuid().ToString() : correlationId;
+      }</value>
+    </set-header>
+    
+    <!-- Retorna corpo do erro estruturado -->
+    <set-body>@{
+      var errorResponse = new JObject();
+      
+      // Tipo de erro baseado no status code
+      var statusCode = context.Response.StatusCode;
+      string errorType = "gateway_error";
+      
+      if (statusCode == 429) {
+        errorType = "rate_limit_exceeded";
+      } else if (statusCode >= 500) {
+        errorType = "server_error";
+      } else if (statusCode == 404) {
+        errorType = "not_found";
+      } else if (statusCode == 401) {
+        errorType = "unauthorized";
+      } else if (statusCode == 403) {
+        errorType = "forbidden";
+      } else if (statusCode >= 400) {
+        errorType = "client_error";
+      }
+      
+      errorResponse["error"] = errorType;
+      errorResponse["message"] = context.LastError?.Message ?? "An error occurred while processing your request";
+      errorResponse["statusCode"] = statusCode;
+      errorResponse["correlationId"] = context.Variables.GetValueOrDefault<string>("correlationId", Guid.NewGuid().ToString());
+      errorResponse["timestamp"] = DateTime.UtcNow.ToString("o");
+      
+      // Informações adicionais apenas em ambiente não-produção
+      // (pode ser controlado via Named Value se necessário)
+      if (context.LastError != null) {
+        errorResponse["source"] = context.LastError.Source;
+        errorResponse["reason"] = context.LastError.Reason;
+      }
+      
+      return errorResponse.ToString();
+    }</set-body>
+    
+  </on-error>
+</policies>

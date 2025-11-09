@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "apimName": {
+      "value": "cd-apim-gateway"
+    },
+    "publisherEmail": {
+      "value": "admin@clickdelivery.com"
+    },
+    "publisherName": {
+      "value": "ClickDelivery Platform Team"
+    },
+    "skuName": {
+      "value": "Consumption"
+    },
+    "skuCapacity": {
+      "value": 0
+    },
+    "bffBackendUrl": {
+      "value": "https://clickdelivery-bff-service.azurewebsites.net"
+    },
+    "apiName": {
+      "value": "clickdelivery-bff-api"
+    },
+    "apiDisplayName": {
+      "value": "ClickDelivery BFF API"
+    },
+    "apiPath": {
+      "value": "api/v1"
+    },
+    "openApiSpecUrl": {
+      "value": ""
+    },
+    "allowedOrigins": {
+      "value": "https://app.clickdelivery.com,https://staging.clickdelivery.com"
+    },
+    "rateLimitCalls": {
+      "value": 100
+    },
+    "rateLimitRenewalPeriod": {
+      "value": 60
+    },
+    "serviceTimeoutMs": {
+      "value": 30000
+    },
+    "enableAppInsights": {
+      "value": false
+    },
+    "appInsightsName": {
+      "value": "cd-apim-insights"
+    },
+    "customDomain": {
+      "value": ""
+    },
+    "certificateKeyVaultSecretId": {
+      "value": ""
+    },
+    "tags": {
+      "value": {
+        "Application": "ClickDelivery",
+        "Component": "API-Gateway",
+        "Environment": "Production",
+        "ManagedBy": "Bicep-IaC",
+        "CostCenter": "Engineering"
+      }
+    }
+  }
+}

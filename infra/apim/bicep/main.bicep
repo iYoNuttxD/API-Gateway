@@ -169,7 +169,7 @@ resource bffBackend 'Microsoft.ApiManagement/service/backends@2023-03-01-preview
   properties: {
     title: 'ClickDelivery BFF Service'
     description: 'Backend para o BFF que orquestra os microsserviços'
-    protocol: 'http'
+    protocol: 'https'
     url: bffBackendUrl
     tls: {
       validateCertificateChain: true
@@ -192,7 +192,8 @@ resource api 'Microsoft.ApiManagement/service/apis@2023-03-01-preview' = {
     ]
     subscriptionRequired: false
     type: 'http'
-    format: empty(openApiSpecUrl) ? 'openapi-link' : 'openapi-link'
+    // Apenas importar OpenAPI spec se URL for fornecida
+    format: empty(openApiSpecUrl) ? '' : 'openapi-link'
     value: empty(openApiSpecUrl) ? '' : openApiSpecUrl
     serviceUrl: bffBackendUrl
   }
